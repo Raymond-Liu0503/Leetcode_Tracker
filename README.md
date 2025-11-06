@@ -1,0 +1,1 @@
+source /mnt/c/Projects/venv/bin/activate

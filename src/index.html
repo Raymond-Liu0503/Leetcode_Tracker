@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Leetcode Investment Tracker</title>
+    <script
+      crossorigin
+      src="https://unpkg.com/react@18/umd/react.production.min.js"
+    ></script>
+    <script
+      crossorigin
+      src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"
+    ></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @keyframes spin {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .spinning {
+        animation: spin 1s cubic-bezier(0.17, 0.67, 0.5, 1.03);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useState, useEffect } = React;
+      const API_URL = "http://localhost:5000/api";
+
+      const Icon = ({ name, size = 24, className = "", ...props }) => {
+        const icons = {
+          "trending-up": "M22 7l-8.5 8.5-3-3L2 21",
+          award:
+            "M12 15c3.866 0 7-3.134 7-7s-3.134-7-7-7-7 3.134-7 7 3.134 7 7 7zm0 0v7m-3-3l3 3 3-3",
+          flame:
+            "M8.5 14.5c1.5 2.5 4 3.5 6 1.5 1-1 1-2 0-3-2-2-3-4-2-6 0 0-3 1-4 3-2 3-1 6 0 4.5z",
+          target:
+            "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10zm0-6c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z",
+          plus: "M12 5v14m-7-7h14",
+          trash:
+            "M3 6h18m-2 0v12c0 1.1-.9 2-2 2H7c-1.1 0-2-.9-2-2V6m3 0V4c0-1.1.9-2 2-2h4c1.1 0 2 .9 2 2v2",
+          calendar:
+            "M19 4H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zM5 2v2m14-2v2M5 8h14",
+          dollar: "M12 1v22m5-18H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H7",
+          circle:
+            "M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z",
+          percent:
+            "M19 5L5 19M9 5a2 2 0 11-4 0 2 2 0 014 0zM21 19a2 2 0 11-4 0 2 2 0 014 0z",
+        };
+        return (
+          <svg
+            width={size}
+            height={size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={className}
+            {...props}
+          >
+            <path d={icons[name]} />
+          </svg>
+        );
+      };
+
+      function LeetcodeTracker() {
+        const [users, setUsers] = useState([]);
+        const [currentUser, setCurrentUser] = useState(null);
+        const [stats, setStats] = useState(null);
+        const [problems, setProblems] = useState([]);
+        const [history, setHistory] = useState([]);
+        const [leaderboard, setLeaderboard] = useState([]);
+        const [showAddUser, setShowAddUser] = useState(false);
+        const [showAddProblem, setShowAddProblem] = useState(false);
+        const [showWheel, setShowWheel] = useState(false);
+        const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+        const [spinning, setSpinning] = useState(false);
+        const [spinResult, setSpinResult] = useState(null);
+        const [selectedTokenType, setSelectedTokenType] = useState("Easy");
+        const [error, setError] = useState(null);
+        const [availableTopics, setAvailableTopics] = useState([]);
+        const [selectedTopic, setSelectedTopic] = useState("");
+
+        const [newUser, setNewUser] = useState({
+          username: "",
+          leetcode_username: "",
+        });
+        const [newProblem, setNewProblem] = useState({
+          problem_slug: "",
+          difficulty: "",
+        });
+
+        useEffect(() => {
+          fetchUsers();
+          fetchLeaderboard();
+        }, []);
+
+        useEffect(() => {
+          if (currentUser) {
+            setSelectedTopic(""); // Reset topic filter when switching users
+            fetchUserData(currentUser);
+          }
+        }, [currentUser]);
+
+        const fetchUsers = async () => {
+          try {
+            const response = await fetch(`${API_URL}/users`);
+            const data = await response.json();
+            setUsers(data);
+            if (data.length > 0 && !currentUser) {
+              setCurrentUser(data[0].username);
+            }
+            setError(null);
+          } catch (error) {
+            setError(
+              "Failed to connect to backend. Make sure Flask is running on port 5000."
+            );
+            console.error("Error fetching users:", error);
+          }
+        };
+
+        const fetchUserData = async (username) => {
+          try {
+            const [statsRes, problemsRes, historyRes, topicsRes] = await Promise.all([
+              fetch(`${API_URL}/users/${username}/stats`),
+              fetch(`${API_URL}/users/${username}/problems?limit=100`),
+              fetch(`${API_URL}/users/${username}/history?limit=15`),
+              fetch(`${API_URL}/users/${username}/topics`),
+            ]);
+
+            setStats(await statsRes.json());
+            setProblems(await problemsRes.json());
+            setHistory(await historyRes.json());
+            setAvailableTopics(await topicsRes.json());
+          } catch (error) {
+            console.error("Error fetching user data:", error);
+          }
+        };
+
+        const fetchProblems = async (username, topic = null) => {
+          try {
+            const url = topic 
+              ? `${API_URL}/users/${username}/problems?limit=100&topic=${encodeURIComponent(topic)}`
+              : `${API_URL}/users/${username}/problems?limit=100`;
+            const response = await fetch(url);
+            const data = await response.json();
+            setProblems(data);
+          } catch (error) {
+            console.error("Error fetching problems:", error);
+          }
+        };
+
+        const fetchLeaderboard = async () => {
+          try {
+            const response = await fetch(`${API_URL}/leaderboard?limit=10`);
+            const data = await response.json();
+            setLeaderboard(data);
+          } catch (error) {
+            console.error("Error fetching leaderboard:", error);
+          }
+        };
+
+        const createUser = async () => {
+          try {
+            const response = await fetch(`${API_URL}/users`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(newUser),
+            });
+
+            if (response.ok) {
+              setNewUser({ username: "", leetcode_username: "" });
+              setShowAddUser(false);
+              fetchUsers();
+            }
+          } catch (error) {
+            console.error("Error creating user:", error);
+          }
+        };
+
+        const deleteUser = async () => {
+          try {
+            const response = await fetch(`${API_URL}/users/${currentUser}`, {
+              method: "DELETE",
+            });
+
+            if (response.ok) {
+              setShowDeleteConfirm(false);
+              setCurrentUser(null);
+              fetchUsers();
+            }
+          } catch (error) {
+            console.error("Error deleting user:", error);
+          }
+        };
+
+        const addProblem = async () => {
+          try {
+            const response = await fetch(
+              `${API_URL}/users/${currentUser}/problems`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(newProblem),
+              }
+            );
+
+            if (response.ok) {
+              setNewProblem({ problem_slug: "", difficulty: "" });
+              setShowAddProblem(false);
+              setSelectedTopic(""); // Reset topic filter
+              fetchUserData(currentUser);
+              fetchLeaderboard();
+            }
+          } catch (error) {
+            console.error("Error adding problem:", error);
+          }
+        };
+
+        const deleteProblem = async (problemId) => {
+          try {
+            const response = await fetch(
+              `${API_URL}/users/${currentUser}/problems/${problemId}`,
+              {
+                method: "DELETE",
+              }
+            );
+
+            if (response.ok) {
+              // Refresh problems with current filter
+              if (selectedTopic) {
+                fetchProblems(currentUser, selectedTopic);
+                fetchUserData(currentUser); // To refresh topics list
+              } else {
+                fetchUserData(currentUser);
+              }
+              fetchLeaderboard();
+            }
+          } catch (error) {
+            console.error("Error deleting problem:", error);
+          }
+        };
+
+        const spinWheel = async () => {
+          setSpinning(true);
+          setSpinResult(null);
+
+          try {
+            const response = await fetch(
+              `${API_URL}/users/${currentUser}/spin`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ token_type: selectedTokenType }),
+              }
+            );
+
+            const data = await response.json();
+
+            setTimeout(() => {
+              setSpinning(false);
+              if (response.ok) {
+                setSpinResult(data);
+                fetchUserData(currentUser);
+                fetchLeaderboard();
+              } else {
+                alert(data.error || "Failed to spin wheel");
+              }
+            }, 1000);
+          } catch (error) {
+            console.error("Error spinning wheel:", error);
+            setSpinning(false);
+          }
+        };
+
+        const getDifficultyColor = (difficulty) => {
+          switch (difficulty) {
+            case "Easy":
+              return "text-green-600 bg-green-100";
+            case "Medium":
+              return "text-yellow-600 bg-yellow-100";
+            case "Hard":
+              return "text-red-600 bg-red-100";
+            default:
+              return "text-gray-600 bg-gray-100";
+          }
+        };
+
+        const getActionColor = (action) => {
+          switch (action) {
+            case "solve":
+              return "text-green-600 bg-green-50";
+            case "decay":
+              return "text-red-600 bg-red-50";
+            case "delete":
+              return "text-gray-600 bg-gray-50";
+            case "wheel_spin":
+              return "text-purple-600 bg-purple-50";
+            default:
+              return "text-blue-600 bg-blue-50";
+          }
+        };
+
+        if (error) {
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50 flex items-center justify-center p-6">
+              <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md">
+                <h2 className="text-2xl font-bold text-red-600 mb-4">
+                  ⚠️ Connection Error
+                </h2>
+                <p className="text-gray-700 mb-4">{error}</p>
+                <button
+                  onClick={fetchUsers}
+                  className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
+                >
+                  Retry Connection
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-indigo-50">
+            <div className="max-w-7xl mx-auto p-6">
+              <div className="bg-white rounded-2xl shadow-xl p-8 mb-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h1 className="text-4xl font-bold text-gray-800 mb-2">
+                      💎 Leetcode Investment Tracker
+                    </h1>
+                    <p className="text-gray-600">
+                      Invest in yourself, one problem at a time
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    {currentUser && (
+                      <button
+                        onClick={() => setShowDeleteConfirm(true)}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition flex items-center gap-2"
+                      >
+                        <Icon name="trash" size={20} />
+                        Delete User
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setShowAddUser(true)}
+                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
+                    >
+                      <Icon name="plus" size={20} />
+                      New User
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 flex-wrap">
+                  {users.map((user) => (
+                    <button
+                      key={user.username}
+                      onClick={() => setCurrentUser(user.username)}
+                      className={`px-4 py-2 rounded-lg font-medium transition ${
+                        currentUser === user.username
+                          ? "bg-purple-600 text-white"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {user.username}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {stats && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-6">
+                    <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-2xl shadow-lg p-6 text-white">
+                      <div className="flex items-center justify-between mb-2">
+                        <Icon name="dollar" size={32} />
+                        <Icon name="trending-up" size={24} />
+                      </div>
+                      <h3 className="text-lg font-medium opacity-90">
+                        Total Investment
+                      </h3>
+                      <p className="text-4xl font-bold mt-2">
+                        ${stats.total_investment}
+                      </p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl shadow-lg p-6 text-white">
+                      <div className="flex items-center justify-between mb-2">
+                        <Icon name="percent" size={32} />
+                      </div>
+                      <h3 className="text-lg font-medium opacity-90">
+                        Total Multiplier
+                      </h3>
+                      <p className="text-4xl font-bold mt-2">
+                        {stats.total_multiplier}%
+                      </p>
+                    </div>
+
+                    <div
+                      className="bg-gradient-to-br from-yellow-500 to-orange-600 rounded-2xl shadow-lg p-6 text-white cursor-pointer hover:scale-105 transition"
+                      onClick={() => setShowWheel(true)}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <Icon name="circle" size={32} />
+                        <span className="text-2xl">🎰</span>
+                      </div>
+                      <h3 className="text-lg font-medium opacity-90">
+                        Spin Tokens
+                      </h3>
+                      <div className="mt-2 space-y-1">
+                        <p className="text-sm">
+                          <span className="text-green-300">Easy:</span>{" "}
+                          {stats.tokens.Easy}
+                        </p>
+                        <p className="text-sm">
+                          <span className="text-yellow-300">Medium:</span>{" "}
+                          {stats.tokens.Medium}
+                        </p>
+                        <p className="text-sm">
+                          <span className="text-red-300">Hard:</span>{" "}
+                          {stats.tokens.Hard}
+                        </p>
+                      </div>
+                      <p className="text-xs opacity-75 mt-2">Click to spin!</p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-orange-500 to-red-600 rounded-2xl shadow-lg p-6 text-white">
+                      <div className="flex items-center justify-between mb-2">
+                        <Icon name="flame" size={32} />
+                        <Icon name="award" size={24} />
+                      </div>
+                      <h3 className="text-lg font-medium opacity-90">
+                        Current Streak
+                      </h3>
+                      <p className="text-4xl font-bold mt-2">
+                        {stats.current_streak} days
+                      </p>
+                      <p className="text-sm opacity-75 mt-1">
+                        Max: {stats.max_streak} days
+                      </p>
+                    </div>
+
+                    <div className="bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl shadow-lg p-6 text-white">
+                      <div className="flex items-center justify-between mb-2">
+                        <Icon name="target" size={32} />
+                      </div>
+                      <h3 className="text-lg font-medium opacity-90">
+                        Problems Solved
+                      </h3>
+                      <div className="mt-3 space-y-1">
+                        <p className="text-lg">
+                          Easy: {stats.problems_by_difficulty.Easy}
+                        </p>
+                        <p className="text-lg">
+                          Medium: {stats.problems_by_difficulty.Medium}
+                        </p>
+                        <p className="text-lg">
+                          Hard: {stats.problems_by_difficulty.Hard}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2 space-y-6">
+                      <div className="bg-white rounded-2xl shadow-xl p-6">
+                        <div className="flex items-center justify-between mb-6">
+                          <h2 className="text-2xl font-bold text-gray-800">
+                            Recent Problems
+                          </h2>
+                          <div className="flex items-center gap-3">
+                            {availableTopics.length > 0 && (
+                              <select
+                                value={selectedTopic}
+                                onChange={(e) => {
+                                  const topic = e.target.value;
+                                  setSelectedTopic(topic);
+                                  fetchProblems(currentUser, topic || null);
+                                }}
+                                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              >
+                                <option value="">All Topics</option>
+                                {availableTopics.map((topic) => (
+                                  <option key={topic} value={topic}>
+                                    {topic}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                            <button
+                              onClick={() => setShowAddProblem(true)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                            >
+                              <Icon name="plus" size={18} />
+                              Add
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          {problems.map((problem) => (
+                            <div
+                              key={problem.id}
+                              className="bg-gray-50 rounded-xl p-4 hover:shadow-md transition"
+                            >
+                              <div className="flex items-start justify-between">
+                                <div className="flex-1">
+                                  <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                    <span
+                                      className={`px-3 py-1 rounded-full text-xs font-semibold ${getDifficultyColor(
+                                        problem.difficulty
+                                      )}`}
+                                    >
+                                      {problem.difficulty}
+                                    </span>
+                                    <span className="text-xs px-2 py-1 bg-yellow-100 text-yellow-700 rounded-full font-semibold">
+                                      {problem.tokens_earned} 🎟️
+                                    </span>
+                                    <span className="text-sm text-gray-500">
+                                      {new Date(
+                                        problem.solved_at
+                                      ).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                  <h3 className="font-semibold text-gray-800 mb-2">
+                                    {problem.leetcode_url ? (
+                                      <a
+                                        href={problem.leetcode_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-600 hover:text-blue-800 hover:underline transition"
+                                      >
+                                        {problem.title}
+                                      </a>
+                                    ) : (
+                                      problem.title
+                                    )}
+                                  </h3>
+                                  {problem.topics &&
+                                    problem.topics.length > 0 && (
+                                      <div className="flex flex-wrap gap-2 mb-2">
+                                        {problem.topics.map((topic, idx) => (
+                                          <button
+                                            key={idx}
+                                            onClick={() => {
+                                              setSelectedTopic(topic);
+                                              fetchProblems(currentUser, topic);
+                                            }}
+                                            className={`text-xs px-2 py-1 rounded-full font-medium transition ${
+                                              selectedTopic === topic
+                                                ? "bg-blue-600 text-white"
+                                                : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                                            }`}
+                                          >
+                                            {topic}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )}
+                                  <p className="text-green-600 font-bold">
+                                    +${problem.investment_value}
+                                  </p>
+                                </div>
+                                <button
+                                  onClick={() => deleteProblem(problem.id)}
+                                  className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition"
+                                >
+                                  <Icon name="trash" size={18} />
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-2xl shadow-xl p-6">
+                        <h2 className="text-2xl font-bold text-gray-800 mb-6">
+                          Investment History
+                        </h2>
+                        <div className="space-y-3 max-h-96 overflow-y-auto">
+                          {history.map((item) => (
+                            <div
+                              key={item.id}
+                              className={`rounded-xl p-4 ${getActionColor(
+                                item.action
+                              )}`}
+                            >
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs font-semibold uppercase">
+                                  {item.action}
+                                </span>
+                                <span
+                                  className={`font-bold ${
+                                    item.amount >= 0
+                                      ? "text-green-600"
+                                      : "text-red-600"
+                                  }`}
+                                >
+                                  {item.amount >= 0 ? "+" : ""}${item.amount}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700">
+                                {item.description}
+                              </p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {new Date(item.date).toLocaleString()}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-white rounded-2xl shadow-xl p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-2xl font-bold text-gray-800">
+                          🏆 Top 10
+                        </h2>
+                        <button
+                          onClick={fetchLeaderboard}
+                          className="px-3 py-1 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                        >
+                          Refresh
+                        </button>
+                      </div>
+                      <div className="space-y-2 max-h-[calc(100vh-300px)] overflow-y-auto">
+                        {leaderboard.length === 0 ? (
+                          <p className="text-gray-500 text-center py-4">
+                            No users yet. Be the first!
+                          </p>
+                        ) : (
+                          leaderboard.map((user, index) => (
+                            <div
+                              key={user.username}
+                              className={`flex flex-col p-3 rounded-xl transition ${
+                                user.username === currentUser
+                                  ? "bg-gradient-to-r from-purple-100 to-purple-50 border-2 border-purple-300"
+                                  : "bg-gray-50 hover:bg-gray-100"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3 mb-2">
+                                <div
+                                  className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-white text-sm ${
+                                    index === 0
+                                      ? "bg-gradient-to-br from-yellow-400 to-yellow-600"
+                                      : index === 1
+                                      ? "bg-gradient-to-br from-gray-300 to-gray-500"
+                                      : index === 2
+                                      ? "bg-gradient-to-br from-orange-400 to-orange-600"
+                                      : "bg-gradient-to-br from-blue-400 to-blue-600"
+                                  }`}
+                                >
+                                  {index === 0
+                                    ? "🥇"
+                                    : index === 1
+                                    ? "🥈"
+                                    : index === 2
+                                    ? "🥉"
+                                    : index + 1}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-800 text-sm truncate">
+                                      {user.username}
+                                    </span>
+                                    {user.username === currentUser && (
+                                      <span className="text-xs px-1.5 py-0.5 bg-purple-600 text-white rounded-full flex-shrink-0">
+                                        You
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <div className="text-xs text-gray-600">
+                                  <span>{user.total_problems} problems</span>
+                                  {user.current_streak > 0 && (
+                                    <span className="ml-2 flex items-center gap-1">
+                                      <Icon name="flame" size={12} />
+                                      {user.current_streak}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-lg font-bold text-green-600">
+                                  ${user.total_investment}
+                                </p>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {showWheel && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6 text-center">
+                      🎰 Spin the Wheel!
+                    </h2>
+
+                    <div className="flex flex-col items-center mb-6">
+                      <div
+                        className={`w-48 h-48 rounded-full border-8 ${
+                          selectedTokenType === "Easy"
+                            ? "border-green-600"
+                            : selectedTokenType === "Medium"
+                            ? "border-yellow-600"
+                            : "border-red-600"
+                        } flex items-center justify-center text-6xl ${
+                          spinning ? "spinning" : ""
+                        }`}
+                      >
+                        🎡
+                      </div>
+
+                      <div className="mt-4 w-full">
+                        <label className="block text-sm font-medium text-gray-700 mb-2 text-center">
+                          Select Token Type:
+                        </label>
+                        <div className="flex gap-2 justify-center">
+                          <button
+                            onClick={() => setSelectedTokenType("Easy")}
+                            disabled={!stats || stats.tokens.Easy < 1}
+                            className={`px-4 py-2 rounded-lg font-medium transition ${
+                              selectedTokenType === "Easy"
+                                ? "bg-green-600 text-white"
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            Easy ({stats?.tokens.Easy || 0})
+                          </button>
+                          <button
+                            onClick={() => setSelectedTokenType("Medium")}
+                            disabled={!stats || stats.tokens.Medium < 1}
+                            className={`px-4 py-2 rounded-lg font-medium transition ${
+                              selectedTokenType === "Medium"
+                                ? "bg-yellow-600 text-white"
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            Medium ({stats?.tokens.Medium || 0})
+                          </button>
+                          <button
+                            onClick={() => setSelectedTokenType("Hard")}
+                            disabled={!stats || stats.tokens.Hard < 1}
+                            className={`px-4 py-2 rounded-lg font-medium transition ${
+                              selectedTokenType === "Hard"
+                                ? "bg-red-600 text-white"
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                          >
+                            Hard ({stats?.tokens.Hard || 0})
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {spinResult && (
+                      <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-xl p-4 mb-4">
+                        <h3 className="font-bold text-lg text-center mb-2">
+                          {spinResult.spin_type === "cash"
+                            ? "💰 Cash Prize!"
+                            : "📈 Multiplier Boost!"}
+                        </h3>
+                        <p className="text-center text-2xl font-bold text-purple-600">
+                          {spinResult.spin_type === "cash"
+                            ? `+$${spinResult.amount}`
+                            : `+${spinResult.amount}%`}
+                        </p>
+                        {spinResult.spin_type === "multiplier" && (
+                          <p className="text-center text-sm text-gray-600 mt-1">
+                            Total Multiplier: {spinResult.total_multiplier}%
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="bg-yellow-50 rounded-lg p-4 mb-4">
+                      <p className="text-sm text-yellow-800">
+                        <strong>Prize Ranges:</strong>
+                        <br />
+                        <span className="text-green-700">• Easy:</span> $1-20 or
+                        0.01-0.2% multiplier
+                        <br />
+                        <span className="text-yellow-700">• Medium:</span> $5-40
+                        or 0.05-0.4% multiplier
+                        <br />
+                        <span className="text-red-700">• Hard:</span> $15-100 or
+                        0.15-1% multiplier
+                        <br />
+                        <br />
+                        <span className="text-gray-700">
+                          80% chance for cash, 20% for multiplier
+                        </span>
+                      </p>
+                    </div>
+
+                    <div className="flex gap-3">
+                      <button
+                        onClick={spinWheel}
+                        disabled={
+                          spinning ||
+                          !stats ||
+                          stats.tokens[selectedTokenType] < 1
+                        }
+                        className="flex-1 bg-purple-600 text-white py-3 rounded-lg hover:bg-purple-700 transition font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+                      >
+                        {spinning
+                          ? "Spinning..."
+                          : `Spin (1 ${selectedTokenType} Token)`}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowWheel(false);
+                          setSpinResult(null);
+                        }}
+                        className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 transition font-medium"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showDeleteConfirm && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+                    <h2 className="text-2xl font-bold text-red-600 mb-4">
+                      ⚠️ Delete User?
+                    </h2>
+                    <p className="text-gray-700 mb-6">
+                      Are you sure you want to delete{" "}
+                      <strong>{currentUser}</strong>? This will permanently
+                      delete all problems, history, and progress. This action
+                      cannot be undone.
+                    </p>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={deleteUser}
+                        className="flex-1 bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition font-medium"
+                      >
+                        Delete Forever
+                      </button>
+                      <button
+                        onClick={() => setShowDeleteConfirm(false)}
+                        className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showAddUser && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6">
+                      Create New User
+                    </h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Username
+                        </label>
+                        <input
+                          type="text"
+                          value={newUser.username}
+                          onChange={(e) =>
+                            setNewUser({ ...newUser, username: e.target.value })
+                          }
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          placeholder="johndoe"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Leetcode Username
+                        </label>
+                        <input
+                          type="text"
+                          value={newUser.leetcode_username}
+                          onChange={(e) =>
+                            setNewUser({
+                              ...newUser,
+                              leetcode_username: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          placeholder="john_leetcode"
+                        />
+                      </div>
+                      <div className="flex gap-3 mt-6">
+                        <button
+                          onClick={createUser}
+                          className="flex-1 bg-purple-600 text-white py-2 rounded-lg hover:bg-purple-700 transition font-medium"
+                        >
+                          Create
+                        </button>
+                        <button
+                          onClick={() => setShowAddUser(false)}
+                          className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition font-medium"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {showAddProblem && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-2xl p-8 max-w-md w-full mx-4">
+                    <h2 className="text-2xl font-bold text-gray-800 mb-6">
+                      Add Solved Problem
+                    </h2>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Problem Slug
+                        </label>
+                        <input
+                          type="text"
+                          value={newProblem.problem_slug}
+                          onChange={(e) =>
+                            setNewProblem({
+                              ...newProblem,
+                              problem_slug: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="two-sum"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          The slug from the Leetcode URL
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          Difficulty
+                        </label>
+                        <select
+                          value={newProblem.difficulty}
+                          onChange={(e) =>
+                            setNewProblem({
+                              ...newProblem,
+                              difficulty: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="">Auto-detect from API</option>
+                          <option value="Easy">Easy (1 token, $10)</option>
+                          <option value="Medium">Medium (1 token, $25)</option>
+                          <option value="Hard">Hard (1 token, $50)</option>
+                        </select>
+                      </div>
+                      <div className="flex gap-3 mt-6">
+                        <button
+                          onClick={addProblem}
+                          className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium"
+                        >
+                          Add Problem
+                        </button>
+                        <button
+                          onClick={() => setShowAddProblem(false)}
+                          className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-lg hover:bg-gray-300 transition font-medium"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<LeetcodeTracker />);
+    </script>
+  </body>
+</html>
