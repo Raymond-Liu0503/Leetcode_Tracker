@@ -4,7 +4,7 @@ Leetcode Investment Tracker - Backend API with Flask
 
 from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text, text
 from sqlalchemy.orm import sessionmaker, relationship, declarative_base
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List
 from flask import Flask, jsonify, request
 from flask_cors import CORS
@@ -65,7 +65,7 @@ class User(Base):
     current_streak = Column(Integer, default=0)
     max_streak = Column(Integer, default=0)
     last_solved_date = Column(DateTime)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     problems = relationship('SolvedProblem', back_populates='user', cascade='all, delete-orphan')
     investment_history = relationship('InvestmentHistory', back_populates='user', cascade='all, delete-orphan')
@@ -84,7 +84,7 @@ class SolvedProblem(Base):
     investment_value = Column(Float, nullable=False)
     tokens_earned = Column(Integer, nullable=False)
     topics = Column(Text)  # Store topics as JSON string or comma-separated
-    solved_at = Column(DateTime, default=datetime.utcnow)
+    solved_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     user = relationship('User', back_populates='problems')
 
@@ -94,7 +94,7 @@ class InvestmentHistory(Base):
     
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    date = Column(DateTime, default=datetime.utcnow)
+    date = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     investment_amount = Column(Float, nullable=False)
     action = Column(String, nullable=False)
     description = Column(String)
@@ -110,7 +110,7 @@ class WheelSpin(Base):
     token_type = Column(String, nullable=False)  # 'Easy', 'Medium', or 'Hard'
     spin_type = Column(String, nullable=False)  # 'cash' or 'multiplier'
     amount = Column(Float, nullable=False)  # Cash amount or multiplier percentage
-    spun_at = Column(DateTime, default=datetime.utcnow)
+    spun_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     user = relationship('User', back_populates='spins')
 
@@ -248,6 +248,19 @@ class LeetcodeTracker:
         if not user.last_solved_date:
             return
         
+        # Check if streak should be broken (missed a day)
+        today = datetime.now(timezone.utc).date()
+        last_solved_date = user.last_solved_date.date()
+        
+        # If user has a streak but last solved was more than 1 day ago, break the streak
+        if user.current_streak > 0 and last_solved_date < today - timedelta(days=1):
+            user.current_streak = 0
+            self.session.commit()
+        
+        # Only apply decay when streak is 0
+        if user.current_streak > 0:
+            return
+        
         try:
             # Check the most recent decay entry to see when decay was last applied
             last_decay = self.session.query(InvestmentHistory)\
@@ -263,7 +276,6 @@ class LeetcodeTracker:
         if last_decay:
             # Use the date of the last decay (only date part, ignore time)
             last_decay_date = last_decay.date.date()
-            today = datetime.utcnow().date()
             
             # If decay was already applied today, don't apply again
             if last_decay_date >= today:
@@ -274,7 +286,7 @@ class LeetcodeTracker:
             days_to_apply = days_since_last_decay
         else:
             # No previous decay, calculate from last solved date
-            days_inactive = (datetime.utcnow().date() - user.last_solved_date.date()).days
+            days_inactive = (datetime.now(timezone.utc).date() - user.last_solved_date.date()).days
             days_to_apply = days_inactive
         
         # Only apply decay if there are days to decay and user has investment
@@ -291,7 +303,6 @@ class LeetcodeTracker:
                 )
                 self.session.add(history)
             
-            user.current_streak = 0
             self.session.commit()
     
     def calculate_streak_bonus(self, base_value: float, streak: int) -> float:
@@ -423,7 +434,7 @@ class LeetcodeTracker:
             return None
         
         # Check if solved today
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         last_solved_date = user.last_solved_date.date() if user.last_solved_date else None
         
         # Update streak
@@ -461,7 +472,7 @@ class LeetcodeTracker:
         self.session.add(problem)
         
         user.total_investment += investment_value
-        user.last_solved_date = datetime.utcnow()
+        user.last_solved_date = datetime.now(timezone.utc)
         user.max_streak = max(user.max_streak, user.current_streak)
         
         history = InvestmentHistory(
